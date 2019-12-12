@@ -1,4 +1,5 @@
-import pypcd
+from __future__ import absolute_import
+from . import pypcd
 
 
 def data_frame_to_point_cloud(df):

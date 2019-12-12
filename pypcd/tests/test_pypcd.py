@@ -4,13 +4,16 @@ this is just a basic sanity check, not a really legit test suite.
 TODO maybe download data here instead of having it in repo
 """
 
+from __future__ import absolute_import, print_function
 import pytest
 import numpy as np
 import os
 import shutil
 import tempfile
+import six
+from six.moves import zip
 
-header1 = """\
+header1 = b"""\
 # .PCD v0.7 - Point Cloud Data file format
 VERSION 0.7
 FIELDS x y z i
@@ -24,7 +27,7 @@ POINTS 500028
 DATA binary_compressed
 """
 
-header2 = """\
+header2 = b"""\
 VERSION .7
 FIELDS x y z normal_x normal_y normal_z curvature boundary k vp_x vp_y vp_z principal_curvature_x principal_curvature_y principal_curvature_z pc1 pc2
 SIZE 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4
@@ -69,7 +72,7 @@ def cloud_centroid(pc):
 
 def test_parse_header():
     from pypcd.pypcd import parse_header
-    lines = header1.split('\n')
+    lines = header1.split(b'\n')
     md = parse_header(lines)
     assert (md['version'] == '0.7')
     assert (md['fields'] == ['x', 'y', 'z', 'i'])
@@ -152,7 +155,7 @@ def test_path_roundtrip_binary(pcd_fname):
 
     pc2 = pypcd.PointCloud.from_path(tmp_fname)
     md2 = pc2.get_metadata()
-    for k, v in md2.iteritems():
+    for k, v in six.iteritems(md2):
         if k == 'data':
             assert v == 'binary'
         else:
@@ -180,7 +183,7 @@ def test_path_roundtrip_binary_compressed(pcd_fname):
 
     pc2 = pypcd.PointCloud.from_path(tmp_fname)
     md2 = pc2.get_metadata()
-    for k, v in md2.iteritems():
+    for k, v in six.iteritems(md2):
         if k == 'data':
             assert v == 'binary_compressed'
         else:

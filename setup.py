@@ -9,7 +9,7 @@ with open('README.rst') as readme_file:
 with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
-requirements = ['numpy', 'python-lzf']
+requirements = ['numpy', 'python-lzf', 'six']
 
 setup_requirements = ['pytest-runner', ]
 

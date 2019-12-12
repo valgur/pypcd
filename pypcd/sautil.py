@@ -3,6 +3,7 @@ such as the ``pc_data`` in ``PointCloud`` objects.
 """
 
 
+from __future__ import absolute_import
 import numpy as np
 
 

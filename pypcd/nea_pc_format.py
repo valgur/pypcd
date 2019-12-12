@@ -1,7 +1,9 @@
 
+from __future__ import absolute_import
 import copy
 import numpy as np
 from sensor_msgs.msg import PointField
+from six.moves import range
 
 # these are from numpy_pc2
 _pftype_to_nptype = dict([(PointField.INT8, np.dtype('int8')),
@@ -248,7 +250,7 @@ def field_dict_list_to_dtypes(field_dicts):
     for f in field_dicts:
         count = f['count']
         if count > 1:
-            for c in xrange(count):
+            for c in range(count):
                 name = '%s_%04d' % (f['name'], c)
                 nptype = _pftype_to_nptype[f['datatype']]
                 dtypes.append((name, nptype))

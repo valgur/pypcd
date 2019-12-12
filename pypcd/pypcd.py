@@ -9,10 +9,16 @@ dimatura@cmu.edu, 2013-2018
 - TODO better support for rgb nonsense
 """
 
+from __future__ import absolute_import, print_function
 import re
 import struct
 import copy
-import cStringIO as sio
+from six.moves import range, map, zip
+import sys
+if sys.version_info[0] >= 3:
+    from io import BytesIO
+else:
+    from cStringIO import StringIO as BytesIO
 import numpy as np
 import warnings
 import lzf
@@ -20,7 +26,7 @@ import lzf
 HAS_SENSOR_MSGS = True
 try:
     from sensor_msgs.msg import PointField
-    import numpy_pc2  # needs sensor_msgs
+    from . import numpy_pc2  # needs sensor_msgs
 except ImportError:
     HAS_SENSOR_MSGS = False
 
@@ -79,23 +85,25 @@ def parse_header(lines):
     """
     metadata = {}
     for ln in lines:
-        if ln.startswith('#') or len(ln) < 2:
+        if ln.startswith(b'#') or len(ln) < 2:
             continue
-        match = re.match('(\w+)\s+([\w\s\.]+)', ln)
+        match = re.match(br'(\w+)\s+([\w\s.]+)', ln)
         if not match:
-            warnings.warn("warning: can't understand line: %s" % ln)
+            warnings.warn("warning: can't understand line: " + ln.decode('ascii'))
             continue
         key, value = match.group(1).lower(), match.group(2)
+        key = key.decode('ascii')
+        value = value.decode('ascii')
         if key == 'version':
             metadata[key] = value
         elif key in ('fields', 'type'):
             metadata[key] = value.split()
         elif key in ('size', 'count'):
-            metadata[key] = map(int, value.split())
+            metadata[key] = list(map(int, value.split()))
         elif key in ('width', 'height', 'points'):
             metadata[key] = int(value)
         elif key == 'viewpoint':
-            metadata[key] = map(float, value.split())
+            metadata[key] = list(map(float, value.split()))
         elif key == 'data':
             metadata[key] = value.strip().lower()
         # TODO apparently count is not required?
@@ -205,9 +213,9 @@ def _build_dtype(metadata):
             fieldnames.append(f)
             typenames.append(np_type)
         else:
-            fieldnames.extend(['%s_%04d' % (f, i) for i in xrange(c)])
+            fieldnames.extend(['%s_%04d' % (f, i) for i in range(c)])
             typenames.extend([np_type]*c)
-    dtype = np.dtype(zip(fieldnames, typenames))
+    dtype = np.dtype(list(zip(fieldnames, typenames)))
     return dtype
 
 
@@ -279,7 +287,7 @@ def point_cloud_from_fileobj(f):
     while True:
         ln = f.readline().strip()
         header.append(ln)
-        if ln.startswith('DATA'):
+        if ln.startswith(b'DATA'):
             metadata = parse_header(header)
             dtype = _build_dtype(metadata)
             break
@@ -290,8 +298,8 @@ def point_cloud_from_fileobj(f):
     elif metadata['data'] == 'binary_compressed':
         pc_data = parse_binary_compressed_pc_data(f, dtype, metadata)
     else:
-        print('DATA field is neither "ascii" or "binary" or\
-                "binary_compressed"')
+        raise ValueError('DATA field is neither "ascii", "binary" or '
+                         '"binary_compressed"')
     return PointCloud(metadata, pc_data)
 
 
@@ -304,9 +312,8 @@ def point_cloud_from_path(fname):
 
 
 def point_cloud_from_buffer(buf):
-    fileobj = sio.StringIO(buf)
-    pc = point_cloud_from_fileobj(fileobj)
-    fileobj.close()  # necessary?
+    with BytesIO(buf) as fileobj:
+        pc = point_cloud_from_fileobj(fileobj)
     return pc
 
 
@@ -321,7 +328,7 @@ def point_cloud_to_fileobj(pc, fileobj, data_compression=None):
         metadata['data'] = data_compression
 
     header = write_header(metadata)
-    fileobj.write(header)
+    fileobj.write(header.encode('ascii'))
     if metadata['data'].lower() == 'ascii':
         fmtstr = build_ascii_fmtstr(pc)
         np.savetxt(fileobj, pc.pc_data, fmt=fmtstr)
@@ -335,9 +342,9 @@ def point_cloud_to_fileobj(pc, fileobj, data_compression=None):
         # reorder to column-by-column
         uncompressed_lst = []
         for fieldname in pc.pc_data.dtype.names:
-            column = np.ascontiguousarray(pc.pc_data[fieldname]).tostring('C')
+            column = np.ascontiguousarray(pc.pc_data[fieldname]).tobytes('C')
             uncompressed_lst.append(column)
-        uncompressed = ''.join(uncompressed_lst)
+        uncompressed = b''.join(uncompressed_lst)
         uncompressed_size = len(uncompressed)
         # print("uncompressed_size = %r"%(uncompressed_size))
         buf = lzf.compress(uncompressed)
@@ -357,12 +364,12 @@ def point_cloud_to_fileobj(pc, fileobj, data_compression=None):
 
 
 def point_cloud_to_path(pc, fname):
-    with open(fname, 'w') as f:
+    with open(fname, 'wb') as f:
         point_cloud_to_fileobj(pc, f)
 
 
 def point_cloud_to_buffer(pc, data_compression=None):
-    fileobj = sio.StringIO()
+    fileobj = BytesIO()
     point_cloud_to_fileobj(pc, fileobj, data_compression)
     return fileobj.getvalue()
 
@@ -370,21 +377,21 @@ def point_cloud_to_buffer(pc, data_compression=None):
 def save_point_cloud(pc, fname):
     """ Save pointcloud to fname in ascii format.
     """
-    with open(fname, 'w') as f:
+    with open(fname, 'wb') as f:
         point_cloud_to_fileobj(pc, f, 'ascii')
 
 
 def save_point_cloud_bin(pc, fname):
     """ Save pointcloud to fname in binary format.
     """
-    with open(fname, 'w') as f:
+    with open(fname, 'wb') as f:
         point_cloud_to_fileobj(pc, f, 'binary')
 
 
 def save_point_cloud_bin_compressed(pc, fname):
     """ Save pointcloud to fname in binary compressed format.
     """
-    with open(fname, 'w') as f:
+    with open(fname, 'wb') as f:
         point_cloud_to_fileobj(pc, f, 'binary_compressed')
 
 
@@ -395,13 +402,11 @@ def save_xyz_label(pc, fname, use_default_lbl=False):
     md = pc.get_metadata()
     if not use_default_lbl and ('label' not in md['fields']):
         raise Exception('label is not a field in this point cloud')
-    with open(fname, 'w') as f:
-        for i in xrange(pc.points):
-            x, y, z = ['%.4f' % d for d in (
-                pc.pc_data['x'][i], pc.pc_data['y'][i], pc.pc_data['z'][i]
-                )]
-            lbl = '1000' if use_default_lbl else pc.pc_data['label'][i]
-            f.write(' '.join((x, y, z, lbl))+'\n')
+    with open(fname, 'wb') as f:
+        for point in pc.pc_data:
+            x, y, z = [b'%.4f' % d for d in point[['x', 'y', 'z']]]
+            lbl = b'1000' if use_default_lbl else point['label'].encode('ascii')
+            f.write(b' '.join((x, y, z, lbl))+b'\n')
 
 
 def save_xyz_intensity_label(pc, fname, use_default_lbl=False):
@@ -412,14 +417,12 @@ def save_xyz_intensity_label(pc, fname, use_default_lbl=False):
         raise Exception('label is not a field in this point cloud')
     if 'intensity' not in md['fields']:
         raise Exception('intensity is not a field in this point cloud')
-    with open(fname, 'w') as f:
-        for i in xrange(pc.points):
-            x, y, z = ['%.4f' % d for d in (
-                pc.pc_data['x'][i], pc.pc_data['y'][i], pc.pc_data['z'][i]
-                )]
-            intensity = '%.4f' % pc.pc_data['intensity'][i]
-            lbl = '1000' if use_default_lbl else pc.pc_data['label'][i]
-            f.write(' '.join((x, y, z, intensity, lbl))+'\n')
+    with open(fname, 'wb') as f:
+        for point in pc.pc_data:
+            x, y, z = [b'%.4f' % d for d in point[['x', 'y', 'z']]]
+            intensity = b'%.4f' % point['intensity']
+            lbl = b'1000' if use_default_lbl else point['label'].encode('ascii')
+            f.write(b' '.join((x, y, z, intensity, lbl))+b'\n')
 
 
 def save_txt(pc, fname, header=True):
@@ -429,16 +432,16 @@ def save_txt(pc, fname, header=True):
     - support multi-count fields.
     - other delimiters.
     """
-    with open(fname, 'w') as f:
+    with open(fname, 'wb') as f:
         if header:
             header_lst = []
             for field_name, cnt in zip(pc.fields, pc.count):
                 if cnt == 1:
-                    header_lst.append(field_name)
+                    header_lst.append(field_name.encode('ascii'))
                 else:
-                    for c in xrange(cnt):
-                        header_lst.append('%s_%04d' % (field_name, c))
-            f.write(' '.join(header_lst)+'\n')
+                    for c in range(cnt):
+                        header_lst.append(b'%s_%04d' % (field_name, c))
+            f.write(b' '.join(header_lst)+b'\n')
         fmtstr = build_ascii_fmtstr(pc)
         np.savetxt(f, pc.pc_data, fmt=fmtstr)
 
@@ -479,9 +482,9 @@ def add_fields(pc, metadata, pc_data):
             fieldnames.append(f)
             typenames.append(np_type)
         else:
-            fieldnames.extend(['%s_%04d' % (f, i) for i in xrange(c)])
+            fieldnames.extend(['%s_%04d' % (f, i) for i in range(c)])
             typenames.extend([np_type]*c)
-    dtype = zip(fieldnames, typenames)
+    dtype = list(zip(fieldnames, typenames))
     # new dtype. could be inferred?
     new_dtype = [(f, pc.pc_data.dtype[f])
                  for f in pc.pc_data.dtype.names] + dtype
@@ -664,7 +667,7 @@ class PointCloud(object):
     """
 
     def __init__(self, metadata, pc_data):
-        self.metadata_keys = metadata.keys()
+        self.metadata_keys = list(metadata.keys())
         self.__dict__.update(metadata)
         self.pc_data = pc_data
         self.check_sanity()
@@ -693,7 +696,7 @@ class PointCloud(object):
             warnings.warn('data_compression keyword is deprecated for'
                           ' compression')
             compression = kwargs['data_compression']
-        with open(fname, 'w') as f:
+        with open(fname, 'wb') as f:
             point_cloud_to_fileobj(self, f, compression)
 
     def save_pcd_to_fileobj(self, fileobj, compression=None, **kwargs):
